@@ -14,22 +14,24 @@ ROS2 환경에서 LiDAR 포인트 클라우드 데이터를 효율적으로 압�
 
 ```
 ros2_ws/
-├── src/
-│   ├── draco_bridge_cpp/              # C++ 기반 Draco 압축 브리지 (메인)
-│   ├── gazebo_lidar_simulation/       # Gazebo LiDAR 시뮬레이션
+├── src/                               # 활성 패키지 (C++ 기반, 고성능)
+│   ├── draco_bridge_cpp/              # Draco 압축 브리지 (메인)
 │   ├── point_cloud_transport/         # Point Cloud Transport 코어 라이브러리
-│   ├── point_cloud_transport_py/      # Python 바인딩
-│   ├── tcp_point_cloud_transport_cpp/ # TCP 전송 플러그인 (C++)
+│   ├── tcp_point_cloud_transport_cpp/ # TCP 전송 플러그인
 │   ├── tf_mover/                      # TF 변환 유틸리티
 │   ├── mobile-3d-lidar-sim/           # 모바일 3D LiDAR 시뮬레이션 (서브모듈)
 │   └── velodyne_simulator/            # Velodyne 시뮬레이터 (서브모듈)
-├── archive/                           # 사용하지 않는 Python 구현 (참고용)
+├── archive/                           # 미사용 패키지 (참고용)
+│   ├── lidar_draco_bridge/            # Python Draco 브리지 (느림)
+│   ├── tcp_point_cloud_transport_py/  # Python TCP 플러그인
+│   ├── point_cloud_transport_py/      # Python 바인딩
+│   └── gazebo_lidar_simulation/       # Gazebo 시뮬레이션
 ├── config/                            # RViz 설정 파일
 ├── scripts/                           # 실행 스크립트 모음
 └── README.md                          # 이 파일
 ```
 
-> **Note**: C++이 Python보다 성능이 우수하여, Python 기반 브리지(`lidar_draco_bridge`, `tcp_point_cloud_transport_py`)는 `archive/` 디렉토리로 이동되었습니다.
+> **Note**: 성능 최적화를 위해 C++ 구현만 사용합니다. Python 패키지와 시뮬레이션 도구는 `archive/`로 이동되었습니다.
 
 ## 🔧 시스템 요구사항
 
@@ -37,7 +39,6 @@ ros2_ws/
 - **ROS2**: Humble Hawksbill
 - **CMake**: 3.8 이상
 - **C++ 컴파일러**: C++17 지원
-- **Python**: 3.10 이상
 
 ### 의존성 패키지
 
@@ -47,7 +48,6 @@ sudo apt install -y \
   ros-humble-sensor-msgs \
   ros-humble-std-msgs \
   ros-humble-pcl-ros \
-  ros-humble-gazebo-ros-pkgs \
   libdraco-dev \
   zlib1g-dev
 ```
