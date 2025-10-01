@@ -1,0 +1,6 @@
+[submodule "src/mobile-3d-lidar-sim"]
+	path = src/mobile-3d-lidar-sim
+	url = https://github.com/louislelay/mobile-3d-lidar-sim.git
+[submodule "src/velodyne_simulator"]
+	path = src/velodyne_simulator
+	url = https://bitbucket.org/DataspeedInc/velodyne_simulator.git
