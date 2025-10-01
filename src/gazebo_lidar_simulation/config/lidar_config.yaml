@@ -1,0 +1,43 @@
+# LiDAR Simulation Configuration
+
+# LiDAR sensor parameters
+lidar:
+  update_rate: 10.0  # Hz
+  horizontal_samples: 720
+  vertical_samples: 64
+  min_range: 0.1  # meters
+  max_range: 30.0  # meters
+  min_angle: -3.14159  # radians
+  max_angle: 3.14159   # radians
+  vertical_min_angle: -0.4  # radians
+  vertical_max_angle: 0.4  # radians
+
+# TCP transport settings
+tcp_transport:
+  enabled: true
+  server_port: 8080
+  max_clients: 10
+  compression_enabled: true
+  compression_type: "zlib"
+  compression_level: 6
+
+# Point cloud processing
+point_cloud:
+  frame_id: "lidar_link"
+  topic_name: "/lidar/points"
+  qos_reliability: "reliable"
+  qos_durability: "volatile"
+  queue_size: 10
+
+# Simulation settings
+simulation:
+  use_sim_time: true
+  physics_update_rate: 250.0  # Hz
+  real_time_factor: 1.0
+  max_step_size: 0.004
+
+# Logging
+logging:
+  level: "info"  # debug, info, warn, error
+  enable_statistics: true
+  statistics_interval: 10  # messages

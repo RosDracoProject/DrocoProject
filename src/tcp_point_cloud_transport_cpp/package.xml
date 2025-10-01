@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tcp_point_cloud_transport_cpp</name>
+  <version>1.0.0</version>
+  <description>
+    Pure C++ TCP/IP transport plugin for point cloud data with Draco compression support.
+    Provides efficient transmission of 3D LiDAR data over network connections using C++.
+  </description>
+  <maintainer email="developer@example.com">Developer</maintainer>
+  <license>Apache-2.0</license>
+
+  <url type="website">https://github.com/ros-perception/point_cloud_transport</url>
+  <url type="bugtracker">https://github.com/ros-perception/point_cloud_transport/issues</url>
+  <url type="repository">https://github.com/ros-perception/point_cloud_transport</url>
+
+  <author>Developer</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>point_cloud_transport</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pluginlib</depend>
+  <depend>rcpputils</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <point_cloud_transport plugin="${prefix}/tcp_plugins.xml"/>
+  </export>
+</package>

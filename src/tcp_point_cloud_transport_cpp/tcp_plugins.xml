@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<library path="lib/libtcp_point_cloud_transport_cpp">
+  <class name="tcp_point_cloud_transport_cpp/TcpPublisherPlugin" type="tcp_point_cloud_transport_cpp::TcpPublisherPlugin" base_class_type="point_cloud_transport::PublisherPlugin">
+    <description>C++ TCP Publisher Plugin for point cloud transport with Draco compression support</description>
+  </class>
+  <class name="tcp_point_cloud_transport_cpp/TcpSubscriberPlugin" type="tcp_point_cloud_transport_cpp::TcpSubscriberPlugin" base_class_type="point_cloud_transport::SubscriberPlugin">
+    <description>C++ TCP Subscriber Plugin for point cloud transport with Draco compression support</description>
+  </class>
+</library>
