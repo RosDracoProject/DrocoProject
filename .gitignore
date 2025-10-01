@@ -26,3 +26,6 @@ Thumbs.db
 *.bak
 *.log
 
+# Archive (deprecated/old packages)
+archive/
+

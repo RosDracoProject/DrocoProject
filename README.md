@@ -15,20 +15,21 @@ ROS2 환경에서 LiDAR 포인트 클라우드 데이터를 효율적으로 압�
 ```
 ros2_ws/
 ├── src/
-│   ├── draco_bridge_cpp/              # C++ 기반 Draco 압축 브리지
-│   ├── lidar_draco_bridge/            # Python 기반 LiDAR Draco 브리지
+│   ├── draco_bridge_cpp/              # C++ 기반 Draco 압축 브리지 (메인)
 │   ├── gazebo_lidar_simulation/       # Gazebo LiDAR 시뮬레이션
 │   ├── point_cloud_transport/         # Point Cloud Transport 코어 라이브러리
 │   ├── point_cloud_transport_py/      # Python 바인딩
 │   ├── tcp_point_cloud_transport_cpp/ # TCP 전송 플러그인 (C++)
-│   ├── tcp_point_cloud_transport_py/  # TCP 전송 플러그인 (Python)
 │   ├── tf_mover/                      # TF 변환 유틸리티
 │   ├── mobile-3d-lidar-sim/           # 모바일 3D LiDAR 시뮬레이션 (서브모듈)
 │   └── velodyne_simulator/            # Velodyne 시뮬레이터 (서브모듈)
+├── archive/                           # 사용하지 않는 Python 구현 (참고용)
 ├── config/                            # RViz 설정 파일
 ├── scripts/                           # 실행 스크립트 모음
 └── README.md                          # 이 파일
 ```
+
+> **Note**: C++이 Python보다 성능이 우수하여, Python 기반 브리지(`lidar_draco_bridge`, `tcp_point_cloud_transport_py`)는 `archive/` 디렉토리로 이동되었습니다.
 
 ## 🔧 시스템 요구사항
 
