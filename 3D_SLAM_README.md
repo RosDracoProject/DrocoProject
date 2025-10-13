@@ -27,7 +27,28 @@ KISS-ICP를 사용하여 3D LiDAR 데이터만으로 SLAM (Simultaneous Localiza
 
 ## 실행 방법
 
-### 📌 기본 실행
+### 🚀 빠른 실행 (권장 - 범용)
+
+**모든 bag 파일에서 자동으로 작동합니다!**
+
+```bash
+cd /home/hkit/my_data/final_project/ros2_ws
+./scripts/auto_kiss_icp.sh /home/hkit/my_data/lidar_data/full_20251001_163123_0/
+```
+
+스크립트가 자동으로:
+- ✅ bag 파일의 frame_id 감지
+- ✅ 적절한 설정으로 KISS-ICP 시작
+- ✅ RViz2 자동 실행
+
+**다른 bag 파일 사용 시:**
+```bash
+./scripts/auto_kiss_icp.sh /path/to/your/bag/file/
+```
+
+---
+
+### 📌 수동 실행 (고급 사용자용)
 
 **터미널 1: Bag 파일 재생**
 ```bash
@@ -50,6 +71,9 @@ ros2 launch kiss_icp odometry.launch.py \
   publish_debug_clouds:=true \
   use_sim_time:=true
 ```
+
+> **⚠️ 중요**: bag 파일마다 frame_id가 다를 수 있습니다 (`rslidar_top` vs `lidar_top`).  
+> RViz2에서 **Fixed Frame**을 해당 frame_id로 변경해야 `/kiss/frame`이 보입니다!
 
 ### 🔁 무한 반복 재생 (테스트용)
 
@@ -144,7 +168,27 @@ map → odom_lidar → rslidar_top
 
 ## 트러블슈팅
 
-### 1. "토픽이 안 보여요"
+### 1. "/kiss/frame이 RViz2에서 안 보여요" ⭐ 가장 흔한 문제
+
+**원인**: bag 파일의 frame_id와 RViz2의 Fixed Frame이 다름
+
+**해결**:
+1. **자동 스크립트 사용 (권장)**:
+   ```bash
+   ./scripts/auto_kiss_icp.sh /path/to/bag/
+   ```
+
+2. **수동 해결**:
+   - bag 파일의 frame_id 확인:
+     ```bash
+     export ROS_DOMAIN_ID=15
+     ros2 topic echo /sensing/lidar/top/pointcloud_raw_ex header.frame_id --once
+     # 출력 예: lidar_top 또는 rslidar_top
+     ```
+   - RViz2에서 **Fixed Frame**을 해당 frame_id로 변경
+   - `/kiss/frame` PointCloud2 표시를 추가하고 **Reliability Policy**를 **Best Effort**로 변경
+
+### 2. "토픽이 안 보여요"
 ```bash
 # ROS2 daemon 재시작
 export ROS_DOMAIN_ID=15
@@ -153,21 +197,22 @@ ros2 daemon start
 ros2 topic list
 ```
 
-### 2. "맵이 안 만들어져요"
+### 3. "맵이 안 만들어져요"
 - bag 파일이 제대로 재생되고 있는지 확인
 - `/sensing/lidar/top/pointcloud_raw_ex` 토픽에 데이터가 있는지 확인:
 ```bash
 ros2 topic hz /sensing/lidar/top/pointcloud_raw_ex
 ```
+- KISS-ICP는 초기화에 **5-10초** 걸립니다. 조금 기다려보세요!
 
-### 3. "맵이 반복할 때마다 이상해져요"
+### 4. "맵이 반복할 때마다 이상해져요"
 - bag 파일의 시작점과 끝점이 다르기 때문입니다
 - `--loop` 옵션을 제거하고 한 번만 재생하세요:
 ```bash
 ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
 ```
 
-### 4. "bash 환경 변수 오류"
+### 5. "bash 환경 변수 오류"
 ```bash
 # 오류 무시하고 계속 진행
 source /opt/ros/humble/setup.bash 2>/dev/null || true
@@ -300,6 +345,58 @@ ros2 topic hz /lidar/decompressed
 
 **압축률 확인**:
 Draco Bridge 로그에서 압축률 통계 확인
+
+### 압축 레벨 테스트
+
+다른 컴퓨터 간 통신을 위해 압축 레벨을 조정하여 속도 vs 압축률 최적화:
+
+**레벨 1 (빠름, 낮은 압축률)**:
+```bash
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=1
+```
+
+**레벨 6 (기본, 균형)**:
+```bash
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
+```
+
+**레벨 9 (느림, 높은 압축률)**:
+```bash
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=9
+```
+
+#### 압축 레벨별 특성
+
+| 레벨 | 속도 | 압축률 | 용도 |
+|------|------|--------|------|
+| 0 | 매우 빠름 | 압축 없음 | 테스트용 |
+| 1 | 빠름 | ~30% | 로컬 네트워크 |
+| 3 | 중간 | ~50% | 일반적인 사용 |
+| 6 | 균형 | ~70% | 기본값 (권장) |
+| 9 | 느림 | ~80%+ | 대역폭 제한 환경 |
+
+#### 최적 레벨 찾기
+
+```bash
+# 터미널 1: Bag 재생
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --loop --clock
+
+# 터미널 2: 다양한 레벨로 테스트
+# 레벨 1
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=1
+# Ctrl+C 후 레벨 3
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=3
+# Ctrl+C 후 레벨 6
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
+
+# 터미널 3: Client
+ros2 run draco_bridge_cpp simple_draco_client
+
+# 터미널 4: 속도 확인
+ros2 topic hz /lidar/decompressed
+```
+
+**목표**: 최소 5Hz 이상, 압축률 최대화
 
 ---
 

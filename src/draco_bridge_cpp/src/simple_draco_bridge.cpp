@@ -24,10 +24,12 @@ public:
         this->declare_parameter("server_port", 8888);
         this->declare_parameter("input_topic", "/sensing/lidar/top/pointcloud_raw_ex");
         this->declare_parameter("output_topic", "/lidar/compressed");
+        this->declare_parameter("compression_level", 6);  // 0-9, 기본값 6
         
         server_port_ = this->get_parameter("server_port").as_int();
         input_topic_ = this->get_parameter("input_topic").as_string();
         output_topic_ = this->get_parameter("output_topic").as_string();
+        compression_level_ = this->get_parameter("compression_level").as_int();
         
         // QoS profile for high frequency
         auto qos = rclcpp::QoS(10)
@@ -54,6 +56,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Listening on port: %d", server_port_);
         RCLCPP_INFO(this->get_logger(), "Input topic: %s", input_topic_.c_str());
         RCLCPP_INFO(this->get_logger(), "Output topic: %s", output_topic_.c_str());
+        RCLCPP_INFO(this->get_logger(), "Compression level: %d (0=none, 9=max)", compression_level_);
     }
     
     ~SimpleDracoBridge()
@@ -218,7 +221,7 @@ private:
             std::vector<uint8_t> compressed_data(compressed_size);
             
             int result = compress2(compressed_data.data(), &compressed_size,
-                                 data.data(), data.size(), Z_DEFAULT_COMPRESSION);
+                                 data.data(), data.size(), compression_level_);
             
             if (result == Z_OK) {
                 compressed_data.resize(compressed_size);
@@ -312,6 +315,7 @@ private:
     int server_port_;
     std::string input_topic_;
     std::string output_topic_;
+    int compression_level_;  // 0-9, 0=no compression, 9=max compression
     
     // ROS2
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr compressed_publisher_;
