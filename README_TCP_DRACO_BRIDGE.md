@@ -8,24 +8,47 @@
 Bag 파일 → 서버(압축) → TCP/IP 전송 → 클라이언트(복호화) → RVIZ2
 ```
 
-## 실행 방법
+## 실행 방법 (같은 컴퓨터에서 테스트)
 
-### 1. 서버 및 데이터 소스 실행
+### 터미널 1: Bag 파일 재생
 ```bash
-cd /home/hkit/my_data/final_project/ros2_ws && ./run_tcp_test.sh
-```
-이 명령어는 다음을 실행합니다:
-- 서버 (`simple_draco_bridge`) 실행
-- Bag 파일 재생 (`rosbag2_2024_09_24-14_28_57`)
-
-### 2. 클라이언트 실행
-```bash
-cd /home/hkit/my_data/final_project/ros2_ws && source install/setup.bash && export ROS_DOMAIN_ID=15 && ros2 run draco_bridge_cpp simple_draco_client
+cd /home/hkit/my_data/final_project/ros2_ws
+export ROS_DOMAIN_ID=15
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
 ```
 
-### 3. RVIZ2 시각화 (선택사항)
+### 터미널 2: 서버 실행 (압축 + 전송)
 ```bash
-cd /home/hkit/my_data/final_project/ros2_ws && export ROS_DOMAIN_ID=15 && rviz2 -d config/simple_draco_visualization.rviz
+cd /home/hkit/my_data/final_project/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
+```
+
+**압축 레벨 옵션:**
+- `-p compression_level:=1` : 빠른 속도 (낮은 압축률)
+- `-p compression_level:=6` : 균형 (기본값)
+- `-p compression_level:=9` : 높은 압축률 (느린 속도)
+
+### 터미널 3: 클라이언트 실행 (수신 + 복호화)
+```bash
+cd /home/hkit/my_data/final_project/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+ros2 run draco_bridge_cpp simple_draco_client
+```
+
+### 터미널 4: 성능 확인 (선택사항)
+```bash
+export ROS_DOMAIN_ID=15
+ros2 topic hz /lidar/decompressed
+```
+
+### 터미널 5: RVIZ2 시각화 (선택사항)
+```bash
+cd /home/hkit/my_data/final_project/ros2_ws
+export ROS_DOMAIN_ID=15
+rviz2 -d config/simple_draco_visualization.rviz
 ```
 
 ## 토픽 정보
@@ -40,12 +63,25 @@ cd /home/hkit/my_data/final_project/ros2_ws && export ROS_DOMAIN_ID=15 && rviz2 
 ## 네트워크 설정
 - **포트**: 8888
 - **프로토콜**: TCP/IP
-- **서버 주소**: 127.0.0.1 (로컬호스트)
+- **서버 주소**: 
+  - 같은 컴퓨터: `127.0.0.1` (로컬호스트)
+  - 다른 컴퓨터: 서버 컴퓨터의 IP 주소 (예: `192.168.3.251`)
 
 ## 압축 설정
 - **압축 알고리즘**: zlib
-- **압축 레벨**: Z_DEFAULT_COMPRESSION
+- **압축 레벨**: 0-9 (기본값: 6)
+  - 레벨 1: 빠른 속도, 낮은 압축률
+  - 레벨 6: 균형 (기본값)
+  - 레벨 9: 느린 속도, 높은 압축률
 - **청크 크기**: 64KB (TCP 전송용)
+
+### 압축 레벨 변경 방법
+```bash
+# 서버 실행 시 압축 레벨 지정
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=1
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=9
+```
 
 ## 성능 모니터링
 
@@ -69,15 +105,124 @@ ros2 topic hz /lidar/decompressed
 - 압축률 (비율)
 - 압축 비율 (%)
 
+## 다른 컴퓨터에서 클라이언트 실행 (컴퓨터 간 통신)
+
+### 1️⃣ 서버 컴퓨터 설정 (이 컴퓨터)
+
+#### IP 주소 확인
+```bash
+hostname -I
+# 예: 192.168.3.251
+```
+
+#### 방화벽 포트 열기
+```bash
+sudo ufw allow 8888/tcp
+```
+
+#### 서버 실행
+```bash
+cd /home/hkit/my_data/final_project/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+
+# Bag 파일 재생 (터미널 1)
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
+
+# 서버 실행 (터미널 2)
+ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
+```
+
+### 2️⃣ 클라이언트 컴퓨터 설정 (다른 컴퓨터)
+
+#### 필수 패키지 설치
+```bash
+# ROS2 환경 설정
+source /opt/ros/humble/setup.bash
+
+# 필수 패키지 설치
+sudo apt update
+sudo apt install -y \
+  ros-humble-rclcpp \
+  ros-humble-sensor-msgs \
+  ros-humble-std-msgs \
+  python3-colcon-common-extensions \
+  zlib1g-dev
+```
+
+#### 소스 코드 복사 및 빌드
+```bash
+# 서버 컴퓨터에서 소스 압축
+cd /home/hkit/my_data/final_project/ros2_ws
+tar -czf draco_bridge_src.tar.gz src/draco_bridge_cpp/
+
+# 클라이언트 컴퓨터로 전송 (USB 또는 scp)
+# scp draco_bridge_src.tar.gz user@클라이언트IP:~/
+
+# 클라이언트 컴퓨터에서 압축 해제 및 빌드
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws
+tar -xzf ~/draco_bridge_src.tar.gz -C .
+
+source /opt/ros/humble/setup.bash
+colcon build --packages-select draco_bridge_cpp --symlink-install
+```
+
+#### 클라이언트 실행
+```bash
+cd ~/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+ros2 run draco_bridge_cpp simple_draco_client --ros-args -p server_host:=192.168.3.251
+```
+
+### 3️⃣ 연결 테스트
+
+#### 네트워크 연결 확인 (클라이언트에서)
+```bash
+# Ping 테스트
+ping 192.168.3.251
+
+# 포트 연결 테스트
+telnet 192.168.3.251 8888
+# 또는
+nc -v 192.168.3.251 8888
+```
+
+#### 데이터 수신 확인 (클라이언트에서)
+```bash
+export ROS_DOMAIN_ID=15
+ros2 topic hz /lidar/decompressed
+ros2 topic echo /lidar/decompressed --no-arr
+```
+
 ## 문제 해결
 
 ### 1. 클라이언트 연결 실패
 ```
 [ERROR] [simple_draco_client]: Failed to connect to server
 ```
-**해결방법**: 서버가 실행 중인지 확인
+**원인**:
+- 서버가 실행되지 않음
+- 방화벽이 8888 포트를 차단
+- 네트워크 연결 문제
+- 잘못된 서버 IP 주소
+
+**해결방법**:
 ```bash
+# 서버 실행 확인
 ps aux | grep simple_draco_bridge
+
+# 포트 리스닝 확인
+ss -tln | grep 8888
+
+# 방화벽 설정 확인
+sudo ufw status
+sudo ufw allow 8888/tcp
+
+# 네트워크 연결 테스트
+ping 서버IP
+telnet 서버IP 8888
 ```
 
 ### 2. 데이터가 전송되지 않음

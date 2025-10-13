@@ -12,15 +12,6 @@ KISS-ICP를 사용하여 3D LiDAR 데이터만으로 SLAM (Simultaneous Localiza
 
 ---
 
-sudo apt update
-sudo apt install -y \
-  ros-humble-desktop \
-  ros-humble-rclcpp \
-  ros-humble-sensor-msgs \
-  ros-humble-std-msgs \
-  python3-colcon-common-extensions \
-  zlib1g-dev
-
 ## 시스템 구성
 
 ### 필수 패키지
