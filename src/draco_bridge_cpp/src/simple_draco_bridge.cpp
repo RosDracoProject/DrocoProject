@@ -2,6 +2,12 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 
+#include <draco/compression/encode.h>
+#include <draco/compression/decode.h>
+#include <draco/point_cloud/point_cloud.h>
+#include <draco/point_cloud/point_cloud_builder.h>
+#include <draco/attributes/point_attribute.h>
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -13,7 +19,6 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
-#include <zlib.h>
 
 class SimpleDracoBridge : public rclcpp::Node
 {
@@ -24,12 +29,14 @@ public:
         this->declare_parameter("server_port", 8888);
         this->declare_parameter("input_topic", "/sensing/lidar/top/pointcloud_raw_ex");
         this->declare_parameter("output_topic", "/lidar/compressed");
-        this->declare_parameter("compression_level", 6);  // 0-9, 기본값 6
+        this->declare_parameter("quantization_bits", 11);  // Draco quantization bits (default: 11)
+        this->declare_parameter("compression_speed", 5);   // Draco speed (0-10, default: 5)
         
         server_port_ = this->get_parameter("server_port").as_int();
         input_topic_ = this->get_parameter("input_topic").as_string();
         output_topic_ = this->get_parameter("output_topic").as_string();
-        compression_level_ = this->get_parameter("compression_level").as_int();
+        quantization_bits_ = this->get_parameter("quantization_bits").as_int();
+        compression_speed_ = this->get_parameter("compression_speed").as_int();
         
         // QoS profile for high frequency
         auto qos = rclcpp::QoS(10)
@@ -56,7 +63,8 @@ public:
         RCLCPP_INFO(this->get_logger(), "Listening on port: %d", server_port_);
         RCLCPP_INFO(this->get_logger(), "Input topic: %s", input_topic_.c_str());
         RCLCPP_INFO(this->get_logger(), "Output topic: %s", output_topic_.c_str());
-        RCLCPP_INFO(this->get_logger(), "Compression level: %d (0=none, 9=max)", compression_level_);
+        RCLCPP_INFO(this->get_logger(), "Quantization bits: %d", quantization_bits_);
+        RCLCPP_INFO(this->get_logger(), "Compression speed: %d (0=slowest, 10=fastest)", compression_speed_);
     }
     
     ~SimpleDracoBridge()
@@ -158,8 +166,15 @@ private:
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
         try {
-            // Compress with zlib
-            std::vector<uint8_t> compressed_data = compressData(msg->data);
+            // Convert ROS PointCloud2 to Draco PointCloud
+            auto draco_point_cloud = convertToDracoPointCloud(msg);
+            if (!draco_point_cloud) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to convert to Draco point cloud");
+                return;
+            }
+            
+            // Compress with Draco
+            std::vector<uint8_t> compressed_data = compressPointCloud(draco_point_cloud.get());
             if (compressed_data.empty()) {
                 RCLCPP_ERROR(this->get_logger(), "Failed to compress point cloud");
                 return;
@@ -180,8 +195,8 @@ private:
             // Publish compressed data
             compressed_publisher_->publish(*compressed_msg);
             
-            // Send to TCP clients
-            sendToClients(compressed_data);
+            // Send to TCP clients (with header info)
+            sendToClients(compressed_data, msg);
             
             // Update statistics
             message_count_++;
@@ -214,71 +229,142 @@ private:
         }
     }
     
-    std::vector<uint8_t> compressData(const std::vector<uint8_t>& data)
+    std::unique_ptr<draco::PointCloud> convertToDracoPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
         try {
-            uLongf compressed_size = compressBound(data.size());
-            std::vector<uint8_t> compressed_data(compressed_size);
+            auto point_cloud = std::make_unique<draco::PointCloud>();
             
-            int result = compress2(compressed_data.data(), &compressed_size,
-                                 data.data(), data.size(), compression_level_);
+            // Get point count
+            int num_points = msg->width * msg->height;
+            if (num_points == 0) {
+                return nullptr;
+            }
             
-            if (result == Z_OK) {
-                compressed_data.resize(compressed_size);
-                return compressed_data;
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Compression failed with code: %d", result);
+            // Create position attribute
+            draco::GeometryAttribute pos_att;
+            pos_att.Init(draco::GeometryAttribute::POSITION, nullptr, 3, draco::DT_FLOAT32, false, 12, 0);
+            int pos_att_id = point_cloud->AddAttribute(pos_att, false, num_points);
+            
+            // Create intensity attribute
+            draco::GeometryAttribute intensity_att;
+            intensity_att.Init(draco::GeometryAttribute::GENERIC, nullptr, 1, draco::DT_FLOAT32, false, 4, 0);
+            int intensity_att_id = point_cloud->AddAttribute(intensity_att, false, num_points);
+            
+            // Fill data
+            auto pos_att_ptr = point_cloud->attribute(pos_att_id);
+            auto intensity_att_ptr = point_cloud->attribute(intensity_att_id);
+            
+            const uint8_t* data_ptr = msg->data.data();
+            int point_step = msg->point_step;
+            
+            for (int i = 0; i < num_points; ++i) {
+                // Position (x, y, z)
+                float x = *reinterpret_cast<const float*>(data_ptr + i * point_step + 0);
+                float y = *reinterpret_cast<const float*>(data_ptr + i * point_step + 4);
+                float z = *reinterpret_cast<const float*>(data_ptr + i * point_step + 8);
+                
+                pos_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), 
+                                             draco::Vector3f(x, y, z).data());
+                
+                // Intensity
+                float intensity = *reinterpret_cast<const float*>(data_ptr + i * point_step + 12);
+                intensity_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), &intensity);
+            }
+            
+            return point_cloud;
+            
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Error converting to Draco point cloud: %s", e.what());
+            return nullptr;
+        }
+    }
+    
+    std::vector<uint8_t> compressPointCloud(draco::PointCloud* point_cloud)
+    {
+        try {
+            draco::Encoder encoder;
+            
+            // Set compression options
+            encoder.SetSpeedOptions(compression_speed_, compression_speed_);
+            encoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, quantization_bits_);
+            encoder.SetAttributeQuantization(draco::GeometryAttribute::GENERIC, 8);
+            
+            // Encode
+            draco::EncoderBuffer buffer;
+            if (!encoder.EncodePointCloudToBuffer(*point_cloud, &buffer).ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to encode point cloud");
                 return {};
             }
             
+            // Copy to vector
+            std::vector<uint8_t> compressed_data(buffer.size());
+            std::memcpy(compressed_data.data(), buffer.data(), buffer.size());
+            
+            return compressed_data;
+            
         } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Error compressing data: %s", e.what());
+            RCLCPP_ERROR(this->get_logger(), "Error compressing point cloud: %s", e.what());
             return {};
         }
     }
     
-    std::vector<uint8_t> decompressData(const std::vector<uint8_t>& compressed_data)
-    {
-        try {
-            // Estimate decompressed size (this is a simple approach)
-            uLongf decompressed_size = compressed_data.size() * 4; // Rough estimate
-            std::vector<uint8_t> decompressed_data(decompressed_size);
-            
-            int result = uncompress(decompressed_data.data(), &decompressed_size,
-                                  compressed_data.data(), compressed_data.size());
-            
-            if (result == Z_OK) {
-                decompressed_data.resize(decompressed_size);
-                return decompressed_data;
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Decompression failed with code: %d", result);
-                return {};
-            }
-            
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Error decompressing data: %s", e.what());
-            return {};
-        }
-    }
-    
-    void sendToClients(const std::vector<uint8_t>& data)
+    void sendToClients(const std::vector<uint8_t>& data, 
+                       const sensor_msgs::msg::PointCloud2::SharedPtr& original_msg)
     {
         std::lock_guard<std::mutex> lock(clients_mutex_);
         
-        // Create message header
-        std::string header = "POINT_CLOUD:" + std::to_string(data.size()) + "\n";
+        // Create message header with metadata
+        // Format: POINT_CLOUD:data_size:frame_id:timestamp_sec:timestamp_nanosec:height:width:point_step:row_step:is_bigendian:is_dense
+        std::string header = "POINT_CLOUD:" + 
+                            std::to_string(data.size()) + ":" +
+                            original_msg->header.frame_id + ":" +
+                            std::to_string(original_msg->header.stamp.sec) + ":" +
+                            std::to_string(original_msg->header.stamp.nanosec) + ":" +
+                            std::to_string(original_msg->height) + ":" +
+                            std::to_string(original_msg->width) + ":" +
+                            std::to_string(original_msg->point_step) + ":" +
+                            std::to_string(original_msg->row_step) + ":" +
+                            std::to_string(original_msg->is_bigendian) + ":" +
+                            std::to_string(original_msg->is_dense) + "\n";
+        
+        // Send field information
+        std::string fields_header = "FIELDS:" + std::to_string(original_msg->fields.size()) + "\n";
         
         for (auto it = client_sockets_.begin(); it != client_sockets_.end();) {
             int client_socket = *it;
             
             try {
-                // Send header
+                // Send main header
                 ssize_t sent = send(client_socket, header.c_str(), header.size(), MSG_NOSIGNAL);
                 if (sent < 0) {
                     RCLCPP_WARN(this->get_logger(), "Failed to send header to client");
                     close(client_socket);
                     it = client_sockets_.erase(it);
                     continue;
+                }
+                
+                // Send fields header
+                sent = send(client_socket, fields_header.c_str(), fields_header.size(), MSG_NOSIGNAL);
+                if (sent < 0) {
+                    RCLCPP_WARN(this->get_logger(), "Failed to send fields header to client");
+                    close(client_socket);
+                    it = client_sockets_.erase(it);
+                    continue;
+                }
+                
+                // Send each field
+                for (const auto& field : original_msg->fields) {
+                    std::string field_str = "FIELD:" + field.name + ":" +
+                                          std::to_string(field.offset) + ":" +
+                                          std::to_string(field.datatype) + ":" +
+                                          std::to_string(field.count) + "\n";
+                    sent = send(client_socket, field_str.c_str(), field_str.size(), MSG_NOSIGNAL);
+                    if (sent < 0) {
+                        RCLCPP_WARN(this->get_logger(), "Failed to send field to client");
+                        close(client_socket);
+                        it = client_sockets_.erase(it);
+                        break;
+                    }
                 }
                 
                 // Send data in chunks
@@ -315,7 +401,8 @@ private:
     int server_port_;
     std::string input_topic_;
     std::string output_topic_;
-    int compression_level_;  // 0-9, 0=no compression, 9=max compression
+    int quantization_bits_;  // Draco quantization bits (default: 11)
+    int compression_speed_;  // Draco compression speed 0-10 (default: 5)
     
     // ROS2
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr compressed_publisher_;

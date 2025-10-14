@@ -2,6 +2,10 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 
+#include <draco/compression/decode.h>
+#include <draco/point_cloud/point_cloud.h>
+#include <draco/attributes/point_attribute.h>
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -13,7 +17,6 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
-#include <zlib.h>
 
 class SimpleDracoClient : public rclcpp::Node
 {
@@ -118,26 +121,84 @@ private:
     {
         while (receiving_ && client_socket_ >= 0) {
             try {
-                // Read header
+                // Read main header
                 std::string header = readLine();
                 if (header.empty()) {
                     RCLCPP_WARN(this->get_logger(), "Empty header received, disconnecting");
                     break;
                 }
                 
-                // Parse header
+                // Parse header: POINT_CLOUD:data_size:frame_id:timestamp_sec:timestamp_nanosec:height:width:point_step:row_step:is_bigendian:is_dense
                 if (header.find("POINT_CLOUD:") != 0) {
                     RCLCPP_WARN(this->get_logger(), "Invalid header format: %s", header.c_str());
                     continue;
                 }
                 
-                size_t colon_pos = header.find(':');
-                if (colon_pos == std::string::npos) {
-                    RCLCPP_WARN(this->get_logger(), "Invalid header format: %s", header.c_str());
+                // Split header by ':'
+                std::vector<std::string> header_parts;
+                size_t pos = 0;
+                std::string token;
+                while ((pos = header.find(':')) != std::string::npos) {
+                    token = header.substr(0, pos);
+                    header_parts.push_back(token);
+                    header.erase(0, pos + 1);
+                }
+                header_parts.push_back(header); // Last part
+                
+                if (header_parts.size() < 11) {
+                    RCLCPP_WARN(this->get_logger(), "Invalid header parts count: %zu", header_parts.size());
                     continue;
                 }
                 
-                size_t data_size = std::stoul(header.substr(colon_pos + 1));
+                // Extract metadata
+                size_t data_size = std::stoul(header_parts[1]);
+                std::string frame_id = header_parts[2];
+                int32_t stamp_sec = std::stoi(header_parts[3]);
+                uint32_t stamp_nanosec = std::stoul(header_parts[4]);
+                uint32_t height = std::stoul(header_parts[5]);
+                uint32_t width = std::stoul(header_parts[6]);
+                uint32_t point_step = std::stoul(header_parts[7]);
+                uint32_t row_step = std::stoul(header_parts[8]);
+                bool is_bigendian = std::stoi(header_parts[9]) != 0;
+                bool is_dense = std::stoi(header_parts[10]) != 0;
+                
+                // Read fields header
+                std::string fields_header = readLine();
+                if (fields_header.find("FIELDS:") != 0) {
+                    RCLCPP_WARN(this->get_logger(), "Invalid fields header: %s", fields_header.c_str());
+                    continue;
+                }
+                
+                size_t num_fields = std::stoul(fields_header.substr(7));
+                std::vector<sensor_msgs::msg::PointField> fields;
+                
+                // Read each field
+                for (size_t i = 0; i < num_fields; i++) {
+                    std::string field_line = readLine();
+                    if (field_line.find("FIELD:") != 0) {
+                        RCLCPP_WARN(this->get_logger(), "Invalid field format: %s", field_line.c_str());
+                        break;
+                    }
+                    
+                    // Parse field: FIELD:name:offset:datatype:count
+                    std::vector<std::string> field_parts;
+                    pos = 0;
+                    while ((pos = field_line.find(':')) != std::string::npos) {
+                        token = field_line.substr(0, pos);
+                        field_parts.push_back(token);
+                        field_line.erase(0, pos + 1);
+                    }
+                    field_parts.push_back(field_line);
+                    
+                    if (field_parts.size() >= 5) {
+                        sensor_msgs::msg::PointField field;
+                        field.name = field_parts[1];
+                        field.offset = std::stoul(field_parts[2]);
+                        field.datatype = std::stoul(field_parts[3]);
+                        field.count = std::stoul(field_parts[4]);
+                        fields.push_back(field);
+                    }
+                }
                 
                 // Read compressed data
                 std::vector<uint8_t> compressed_data(data_size);
@@ -147,7 +208,9 @@ private:
                 }
                 
                 // Decompress and publish
-                processCompressedData(compressed_data);
+                processCompressedData(compressed_data, frame_id, stamp_sec, stamp_nanosec, 
+                                    height, width, point_step, row_step, 
+                                    is_bigendian, is_dense, fields);
                 
             } catch (const std::exception& e) {
                 RCLCPP_ERROR(this->get_logger(), "Error in receive loop: %s", e.what());
@@ -198,32 +261,117 @@ private:
         return total_received == size;
     }
     
-    void processCompressedData(const std::vector<uint8_t>& compressed_data)
+    void processCompressedData(const std::vector<uint8_t>& compressed_data,
+                               const std::string& frame_id,
+                               int32_t stamp_sec,
+                               uint32_t stamp_nanosec,
+                               uint32_t height,
+                               uint32_t width,
+                               uint32_t point_step,
+                               uint32_t row_step,
+                               bool is_bigendian,
+                               bool is_dense,
+                               const std::vector<sensor_msgs::msg::PointField>& fields)
     {
         try {
-            // Decompress with zlib
-            std::vector<uint8_t> decompressed_data = decompressData(compressed_data);
-            if (decompressed_data.empty()) {
+            // Decompress with Draco
+            auto draco_point_cloud = decompressPointCloud(compressed_data);
+            if (!draco_point_cloud) {
                 RCLCPP_ERROR(this->get_logger(), "Failed to decompress point cloud");
                 return;
             }
             
-            // Create PointCloud2 message
-            auto msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
-            msg->header.stamp = this->now();
-            msg->header.frame_id = "rslidar_top";
+            // Convert Draco PointCloud to ROS PointCloud2
+            auto msg = convertFromDracoPointCloud(draco_point_cloud.get(), frame_id, 
+                                                  stamp_sec, stamp_nanosec);
+            if (!msg) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to convert from Draco point cloud");
+                return;
+            }
             
-            // Estimate point count from decompressed data
-            int point_step = 16; // 4 floats per point
-            int num_points = decompressed_data.size() / point_step;
+            // Publish
+            decompressed_publisher_->publish(*msg);
+            
+            // Update statistics
+            message_count_++;
+            total_bytes_received_ += compressed_data.size();
+            
+            if (message_count_ % 10 == 0) {
+                size_t decompressed_size = msg->data.size();
+                double compression_ratio = static_cast<double>(decompressed_size) / compressed_data.size();
+                RCLCPP_INFO(this->get_logger(), 
+                           "=== TCP/IP 수신 통계 (Draco) ===");
+                RCLCPP_INFO(this->get_logger(), 
+                           "수신된 메시지: %zu개", message_count_.load());
+                RCLCPP_INFO(this->get_logger(), 
+                           "Frame ID: %s", frame_id.c_str());
+                RCLCPP_INFO(this->get_logger(), 
+                           "총 수신 바이트: %.2f MB", total_bytes_received_ / (1024.0 * 1024.0));
+                RCLCPP_INFO(this->get_logger(), 
+                           "압축률: %.2f:1", compression_ratio);
+                RCLCPP_INFO(this->get_logger(), 
+                           "현재 메시지: %zu bytes -> %zu bytes", 
+                           compressed_data.size(), decompressed_size);
+            }
+            
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Error processing compressed data: %s", e.what());
+        }
+    }
+    
+    std::unique_ptr<draco::PointCloud> decompressPointCloud(const std::vector<uint8_t>& compressed_data)
+    {
+        try {
+            draco::DecoderBuffer buffer;
+            buffer.Init(reinterpret_cast<const char*>(compressed_data.data()), compressed_data.size());
+            
+            draco::Decoder decoder;
+            auto geom_type = draco::Decoder::GetEncodedGeometryType(&buffer).value();
+            
+            if (geom_type != draco::POINT_CLOUD) {
+                RCLCPP_ERROR(this->get_logger(), "Invalid geometry type");
+                return nullptr;
+            }
+            
+            auto status_or = decoder.DecodePointCloudFromBuffer(&buffer);
+            if (!status_or.ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to decode point cloud: %s", 
+                           status_or.status().error_msg());
+                return nullptr;
+            }
+            
+            return std::move(status_or).value();
+            
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Error decompressing point cloud: %s", e.what());
+            return nullptr;
+        }
+    }
+    
+    std::shared_ptr<sensor_msgs::msg::PointCloud2> convertFromDracoPointCloud(
+        draco::PointCloud* point_cloud,
+        const std::string& frame_id,
+        int32_t stamp_sec,
+        uint32_t stamp_nanosec)
+    {
+        try {
+            auto msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+            
+            msg->header.frame_id = frame_id;
+            msg->header.stamp.sec = stamp_sec;
+            msg->header.stamp.nanosec = stamp_nanosec;
+            
+            int num_points = point_cloud->num_points();
+            if (num_points == 0) {
+                return nullptr;
+            }
             
             msg->width = num_points;
             msg->height = 1;
-            msg->point_step = point_step;
-            msg->row_step = msg->width * msg->point_step;
             msg->is_dense = true;
+            msg->is_bigendian = false;
             
-            // Set fields
+            // Setup fields
             sensor_msgs::msg::PointField field;
             field.name = "x";
             field.offset = 0;
@@ -243,56 +391,45 @@ private:
             field.offset = 12;
             msg->fields.push_back(field);
             
-            msg->data = decompressed_data;
+            msg->point_step = 16;
+            msg->row_step = msg->point_step * msg->width;
+            msg->data.resize(msg->row_step);
             
-            // Publish
-            decompressed_publisher_->publish(*msg);
+            // Get attributes
+            const auto* pos_att = point_cloud->GetNamedAttribute(draco::GeometryAttribute::POSITION);
+            const auto* intensity_att = point_cloud->GetNamedAttribute(draco::GeometryAttribute::GENERIC);
             
-            // Update statistics
-            message_count_++;
-            total_bytes_received_ += compressed_data.size();
-            
-            if (message_count_ % 10 == 0) {
-                double compression_ratio = static_cast<double>(decompressed_data.size()) / compressed_data.size();
-                RCLCPP_INFO(this->get_logger(), 
-                           "=== TCP/IP 수신 통계 ===");
-                RCLCPP_INFO(this->get_logger(), 
-                           "수신된 메시지: %zu개", message_count_.load());
-                RCLCPP_INFO(this->get_logger(), 
-                           "총 수신 바이트: %.2f MB", total_bytes_received_ / (1024.0 * 1024.0));
-                RCLCPP_INFO(this->get_logger(), 
-                           "압축률: %.2f:1", compression_ratio);
-                RCLCPP_INFO(this->get_logger(), 
-                           "현재 메시지: %zu bytes -> %zu bytes", 
-                           compressed_data.size(), decompressed_data.size());
+            if (!pos_att) {
+                RCLCPP_ERROR(this->get_logger(), "No position attribute found");
+                return nullptr;
             }
             
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Error processing compressed data: %s", e.what());
-        }
-    }
-    
-    std::vector<uint8_t> decompressData(const std::vector<uint8_t>& compressed_data)
-    {
-        try {
-            // Estimate decompressed size
-            uLongf decompressed_size = compressed_data.size() * 4; // Rough estimate
-            std::vector<uint8_t> decompressed_data(decompressed_size);
-            
-            int result = uncompress(decompressed_data.data(), &decompressed_size,
-                                  compressed_data.data(), compressed_data.size());
-            
-            if (result == Z_OK) {
-                decompressed_data.resize(decompressed_size);
-                return decompressed_data;
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Decompression failed with code: %d", result);
-                return {};
+            // Fill data
+            uint8_t* data_ptr = msg->data.data();
+            for (int i = 0; i < num_points; ++i) {
+                // Position
+                std::array<float, 3> pos;
+                pos_att->GetValue(draco::AttributeValueIndex(i), pos.data());
+                
+                *reinterpret_cast<float*>(data_ptr + i * 16 + 0) = pos[0];
+                *reinterpret_cast<float*>(data_ptr + i * 16 + 4) = pos[1];
+                *reinterpret_cast<float*>(data_ptr + i * 16 + 8) = pos[2];
+                
+                // Intensity
+                if (intensity_att) {
+                    float intensity;
+                    intensity_att->GetValue(draco::AttributeValueIndex(i), &intensity);
+                    *reinterpret_cast<float*>(data_ptr + i * 16 + 12) = intensity;
+                } else {
+                    *reinterpret_cast<float*>(data_ptr + i * 16 + 12) = 0.0f;
+                }
             }
             
+            return msg;
+            
         } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Error decompressing data: %s", e.what());
-            return {};
+            RCLCPP_ERROR(this->get_logger(), "Error converting from Draco point cloud: %s", e.what());
+            return nullptr;
         }
     }
     
