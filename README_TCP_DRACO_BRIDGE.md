@@ -19,7 +19,7 @@ export ROS_DOMAIN_ID=15
 ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
 
 # 무한 반복 재생 (계속 반복)
-ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop --start-paused
 ```
 
 ### 터미널 2: 서버 실행 (압축 + 전송)
