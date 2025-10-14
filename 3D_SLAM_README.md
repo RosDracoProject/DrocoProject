@@ -210,7 +210,7 @@ ros2 launch kiss_icp odometry.launch.py \
 # 고속 (낮은 압축률, 빠른 처리)
 ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
   -p quantization_bits:=14 \
-  -p compression_speed:=10
+  -p compression_speed:=9
 
 # 균형 (기본값, 권장)
 ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
@@ -225,11 +225,13 @@ ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
 
 | 설정 | quantization_bits | speed | 압축률 | 속도 | 용도 |
 |------|-------------------|-------|--------|------|------|
-| **고속** | 14 (높음) | 10 (빠름) | ~15:1 | 빠름 | 로컬 네트워크 |
+| **고속** | 14 (높음) | 9 (빠름) | ~15:1 | 빠름 | 로컬 네트워크 |
 | **균형** | 11 (중간) | 5 (중간) | ~19:1 | 중간 | 일반 (권장) |
 | **고압축** | 8 (낮음) | 0 (느림) | ~25:1+ | 느림 | 원격 네트워크 |
 
-**핵심**: quantization_bits ↓ = 압축률 ↑, compression_speed ↓ = 압축률 ↑
+**핵심**: 
+- `quantization_bits` ↓ = 압축률 ↑
+- `compression_speed` 범위: **0-9** (10은 오류!)
 
 ### 성능 모니터링
 ```bash

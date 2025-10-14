@@ -142,11 +142,11 @@ ros2 topic echo /lidar/decompressed --no-arr
 
 #### 2. compression_speed (압축 속도)
 - **기본값**: 5
-- **범위**: 0-10
+- **범위**: 0-9 ⚠️ (10은 오류 발생)
 - **설명**: 압축 속도 vs 압축률 트레이드오프
   - **0-3**: 느린 압축, 최고 압축률
   - **4-6**: 균형 (권장)
-  - **7-10**: 빠른 압축, 낮은 압축률
+  - **7-9**: 빠른 압축, 낮은 압축률
 
 ### 파라미터 조정 예제
 
@@ -154,7 +154,7 @@ ros2 topic echo /lidar/decompressed --no-arr
 # 고속 (낮은 압축률, 빠른 처리)
 ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
   -p quantization_bits:=14 \
-  -p compression_speed:=10
+  -p compression_speed:=9
 
 # 균형 설정 (실시간 처리용, 기본값)
 ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
@@ -167,7 +167,9 @@ ros2 run draco_bridge_cpp simple_draco_bridge --ros-args \
   -p compression_speed:=0
 ```
 
-**중요**: quantization_bits가 **낮을수록** 압축률이 **높아집니다** (정밀도는 낮아짐)
+**중요**: 
+- `quantization_bits` ↓ = 압축률 ↑ (정밀도 ↓)
+- `compression_speed` 최대값은 **9** (10은 오류!)
 
 ### 커스텀 전송 프로토콜
 

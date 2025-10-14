@@ -64,7 +64,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Input topic: %s", input_topic_.c_str());
         RCLCPP_INFO(this->get_logger(), "Output topic: %s", output_topic_.c_str());
         RCLCPP_INFO(this->get_logger(), "Quantization bits: %d", quantization_bits_);
-        RCLCPP_INFO(this->get_logger(), "Compression speed: %d (0=slowest, 10=fastest)", compression_speed_);
+        RCLCPP_INFO(this->get_logger(), "Compression speed: %d (0=slowest, 9=fastest)", compression_speed_);
     }
     
     ~SimpleDracoBridge()
