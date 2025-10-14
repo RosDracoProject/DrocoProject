@@ -14,7 +14,12 @@ Bag 파일 → 서버(압축) → TCP/IP 전송 → 클라이언트(복호화) �
 ```bash
 cd /home/hkit/my_data/final_project/ros2_ws
 export ROS_DOMAIN_ID=15
+
+# 일반 재생 (한 번만 재생)
 ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
+
+# 무한 반복 재생 (계속 반복)
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop
 ```
 
 ### 터미널 2: 서버 실행 (압축 + 전송)
@@ -127,7 +132,10 @@ source install/setup.bash
 export ROS_DOMAIN_ID=15
 
 # Bag 파일 재생 (터미널 1)
+# 일반 재생:
 ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
+# 무한 반복 재생:
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop
 
 # 서버 실행 (터미널 2)
 ros2 run draco_bridge_cpp simple_draco_bridge --ros-args -p compression_level:=6
