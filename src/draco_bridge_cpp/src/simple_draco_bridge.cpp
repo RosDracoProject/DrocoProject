@@ -240,17 +240,20 @@ private:
                 return nullptr;
             }
             
+            // Set number of points first
+            point_cloud->set_num_points(num_points);
+            
             // Create position attribute
             draco::GeometryAttribute pos_att;
             pos_att.Init(draco::GeometryAttribute::POSITION, nullptr, 3, draco::DT_FLOAT32, false, 12, 0);
-            int pos_att_id = point_cloud->AddAttribute(pos_att, false, num_points);
+            int pos_att_id = point_cloud->AddAttribute(pos_att, true, num_points);
             
             // Create intensity attribute
             draco::GeometryAttribute intensity_att;
             intensity_att.Init(draco::GeometryAttribute::GENERIC, nullptr, 1, draco::DT_FLOAT32, false, 4, 0);
-            int intensity_att_id = point_cloud->AddAttribute(intensity_att, false, num_points);
+            int intensity_att_id = point_cloud->AddAttribute(intensity_att, true, num_points);
             
-            // Fill data
+            // Get attribute pointers
             auto pos_att_ptr = point_cloud->attribute(pos_att_id);
             auto intensity_att_ptr = point_cloud->attribute(intensity_att_id);
             
