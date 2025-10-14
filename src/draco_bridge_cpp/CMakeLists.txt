@@ -11,6 +11,12 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
+# Find Draco library
+find_library(DRACO_LIBRARY NAMES draco REQUIRED)
+if(NOT DRACO_LIBRARY)
+  message(FATAL_ERROR "Draco library not found")
+endif()
+
 # Include directories
 include_directories(include)
 
@@ -22,8 +28,8 @@ add_executable(simple_draco_client src/simple_draco_client.cpp)
 ament_target_dependencies(simple_draco_bridge rclcpp sensor_msgs std_msgs)
 ament_target_dependencies(simple_draco_client rclcpp sensor_msgs std_msgs)
 
-target_link_libraries(simple_draco_bridge z)
-target_link_libraries(simple_draco_client z)
+target_link_libraries(simple_draco_bridge ${DRACO_LIBRARY})
+target_link_libraries(simple_draco_client ${DRACO_LIBRARY})
 
 # Install
 install(TARGETS
