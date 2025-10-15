@@ -90,28 +90,61 @@ ros2 launch kiss_icp odometry.launch.py \
 
 **중요**: frame_id가 자동으로 전송되므로 별도 설정 불필요!
 
-### 터미널 5: 성능 확인 (선택사항)
+### 터미널 5: 웹 모니터 (실시간 성능 시각화) 🌐
+```bash
+cd /home/hkit/my_data/final_project/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+ros2 run draco_web_monitor web_monitor_node
+```
+
+**웹 브라우저에서 접속:**
+```
+http://localhost:5000
+```
+
+**실시간 표시:**
+- 📊 압축률 그래프 (18.68:1)
+- ⏱️ 복호화 시간 (ms)
+- 📡 네트워크 대역폭 (KB/s)
+- 📦 복호화 후 데이터 크기 (bytes)
+- 💻 CPU/메모리 사용률
+
+### 터미널 6: 성능 확인 (선택사항)
 ```bash
 export ROS_DOMAIN_ID=15
 
 # 데이터 전송률 확인
 ros2 topic hz /lidar/decompressed
 
+# 통계 토픽 확인
+ros2 topic echo /draco/compression_ratio
+ros2 topic echo /draco/decompression_time
+ros2 topic echo /draco/network_throughput
+ros2 topic echo /draco/decompressed_size
+
 # frame_id 확인
 ros2 topic echo /lidar/decompressed --field header.frame_id --once
-
-# 데이터 내용 확인
-ros2 topic echo /lidar/decompressed --no-arr
 ```
 
 ## 시스템 설정
 
 ### ROS2 토픽
+
+#### 데이터 토픽
 | 토픽 | 타입 | 설명 |
 |------|------|------|
 | `/sensing/lidar/top/pointcloud_raw_ex` | PointCloud2 | 입력 (원본) |
 | `/lidar/compressed` | PointCloud2 | 서버 출력 (압축됨) |
 | `/lidar/decompressed` | PointCloud2 | 클라이언트 출력 (복호화됨) |
+
+#### 웹 모니터링 토픽 (클라이언트가 발행)
+| 토픽 | 타입 | 설명 |
+|------|------|------|
+| `/draco/compression_ratio` | Float64 | 압축률 (예: 18.68) |
+| `/draco/decompression_time` | Float64 | 복호화 시간 (ms) |
+| `/draco/network_throughput` | Float64 | 네트워크 대역폭 (KB/s) |
+| `/draco/decompressed_size` | Float64 | 복호화 후 데이터 크기 (bytes) |
 
 ### 네트워크
 | 항목 | 값 |
@@ -387,17 +420,27 @@ ldconfig -p | grep draco  # 설치 확인
 
 ## 파일 구조
 ```
-src/draco_bridge_cpp/
-├── src/
-│   ├── simple_draco_bridge.cpp    # 서버 (Draco 압축 및 전송)
-│   ├── simple_draco_client.cpp    # 클라이언트 (Draco 복호화)
-│   ├── draco_bridge_server.cpp    # 구버전 서버 (참고용)
-│   └── draco_bridge_client.cpp    # 구버전 클라이언트 (참고용)
-├── CMakeLists.txt                  # Draco 라이브러리 링크 설정
-└── package.xml
+src/
+├── draco_bridge_cpp/
+│   ├── src/
+│   │   ├── simple_draco_bridge.cpp    # 서버 (Draco 압축 + TCP 전송)
+│   │   ├── simple_draco_client.cpp    # 클라이언트 (TCP 수신 + Draco 복호화 + 통계 발행)
+│   │   ├── draco_bridge_server.cpp    # 참고용
+│   │   └── draco_bridge_client.cpp    # 참고용
+│   ├── CMakeLists.txt
+│   └── package.xml
+│
+└── draco_web_monitor/               # 🌐 웹 모니터링
+    ├── draco_web_monitor/
+    │   ├── web_monitor_node.py      # ROS2 노드
+    │   ├── web_server.py            # Flask 서버
+    │   └── templates/
+    │       └── index.html            # 대시보드 UI
+    ├── setup.py
+    └── package.xml
 
 config/
-└── simple_draco_visualization.rviz  # RVIZ2 설정
+└── simple_draco_visualization.rviz
 
 README_TCP_DRACO_BRIDGE.md           # 이 파일
 ```
@@ -422,6 +465,66 @@ README_TCP_DRACO_BRIDGE.md           # 이 파일
 | **Draco** | 10:1 ~ 30:1 | 중간 | 3D 포인트 클라우드 |
 
 **결론**: Draco는 zlib 대비 **3~5배 높은 압축률**
+
+## 웹 모니터링 시스템 🌐
+
+### 실시간 성능 대시보드
+
+웹 브라우저에서 시스템 성능을 실시간으로 모니터링할 수 있습니다!
+
+#### 실행 방법
+```bash
+# 클라이언트 실행 후 (터미널 3)
+cd /home/hkit/my_data/final_project/ros2_ws
+source install/setup.bash
+export ROS_DOMAIN_ID=15
+ros2 run draco_web_monitor web_monitor_node
+```
+
+#### 웹 접속
+```
+http://localhost:5000
+```
+
+#### 표시 항목
+| 카테고리 | 지표 | 설명 |
+|----------|------|------|
+| **압축 성능** | 압축률 그래프 | 실시간 18.68:1 |
+| **처리 시간** | 복호화 시간 | 밀리초 단위 |
+| **네트워크** | 대역폭 사용량 | KB/s |
+| **데이터 크기** | 복호화 후 크기 | bytes |
+| **시스템** | CPU/메모리 | 사용률 % |
+
+#### 스크린샷 예시
+```
+┌────────────────────────────────────────┐
+│ 압축률: 18.68:1  │ 복호화: 5.2ms     │
+│ CPU: 15.3%       │ 메모리: 23.1%     │
+├────────────────────────────────────────┤
+│  [압축률 그래프]     [시간 그래프]    │
+│                                        │
+│  [시스템 그래프]     [크기 그래프]    │
+└────────────────────────────────────────┘
+```
+
+#### 데이터 흐름
+```
+클라이언트 (simple_draco_client)
+    ↓ 계산 및 발행
+ROS2 토픽:
+    - /draco/compression_ratio (18.68)
+    - /draco/decompression_time (5.2)
+    - /draco/network_throughput (1234.5)
+    - /draco/decompressed_size (2304000)
+    ↓ 구독
+웹 모니터 (web_monitor_node)
+    ↓ Flask API
+웹 브라우저
+    ↓ Chart.js
+실시간 그래프 표시
+```
+
+---
 
 ## 주요 기능
 
@@ -455,7 +558,34 @@ Ctrl+C
 # 또는 강제 종료
 pkill -f simple_draco_bridge
 pkill -f simple_draco_client
+pkill -f web_monitor_node
 pkill -f kiss_icp
+```
+
+## 전체 시스템 실행 순서 요약
+
+```bash
+# 1단계: Bag 재생 (터미널 1)
+ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop
+
+# 2단계: Draco 서버 (터미널 2)
+source install/setup.bash && export ROS_DOMAIN_ID=15
+ros2 run draco_bridge_cpp simple_draco_bridge
+
+# 3단계: Draco 클라이언트 (터미널 3)
+source install/setup.bash && export ROS_DOMAIN_ID=15
+ros2 run draco_bridge_cpp simple_draco_client
+
+# 4단계: KISS-ICP (터미널 4)
+source install/setup.bash && export ROS_DOMAIN_ID=15
+ros2 launch kiss_icp odometry.launch.py topic:=/lidar/decompressed visualize:=true use_sim_time:=true
+
+# 5단계: 웹 모니터 (터미널 5) 🌐
+source install/setup.bash && export ROS_DOMAIN_ID=15
+ros2 run draco_web_monitor web_monitor_node
+
+# 6단계: 웹 브라우저에서 접속
+# http://localhost:5000
 ```
 
 ## 참고 자료

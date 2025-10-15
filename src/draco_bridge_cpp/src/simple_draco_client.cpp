@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/float64.hpp>
 
 #include <draco/compression/decode.h>
 #include <draco/point_cloud/point_cloud.h>
@@ -41,9 +42,20 @@ public:
         decompressed_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
             output_topic_, qos);
         
+        // Statistics publishers for web monitoring
+        compression_ratio_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+            "/draco/compression_ratio", 10);
+        decompression_time_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+            "/draco/decompression_time", 10);
+        network_throughput_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+            "/draco/network_throughput", 10);
+        decompressed_size_pub_ = this->create_publisher<std_msgs::msg::Float64>(
+            "/draco/decompressed_size", 10);
+        
         // Statistics
         message_count_ = 0;
         total_bytes_received_ = 0;
+        last_stat_time_ = this->now();
         
         // Connect to server
         if (connectToServer()) {
@@ -274,6 +286,9 @@ private:
                                const std::vector<sensor_msgs::msg::PointField>& fields)
     {
         try {
+            // Measure decompression time
+            auto decompress_start = std::chrono::high_resolution_clock::now();
+            
             // Decompress with Draco
             auto draco_point_cloud = decompressPointCloud(compressed_data);
             if (!draco_point_cloud) {
@@ -289,8 +304,15 @@ private:
                 return;
             }
             
+            auto decompress_end = std::chrono::high_resolution_clock::now();
+            double decompress_time_ms = std::chrono::duration<double, std::milli>(
+                decompress_end - decompress_start).count();
+            
             // Publish
             decompressed_publisher_->publish(*msg);
+            
+            // Publish statistics for web monitoring
+            publishStatistics(compressed_data.size(), msg->data.size(), decompress_time_ms);
             
             // Update statistics
             message_count_++;
@@ -316,6 +338,40 @@ private:
             
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Error processing compressed data: %s", e.what());
+        }
+    }
+    
+    void publishStatistics(size_t compressed_size, size_t decompressed_size, double decompress_time_ms)
+    {
+        // Calculate compression ratio
+        double compression_ratio = static_cast<double>(decompressed_size) / compressed_size;
+        
+        // Publish compression ratio
+        auto ratio_msg = std_msgs::msg::Float64();
+        ratio_msg.data = compression_ratio;
+        compression_ratio_pub_->publish(ratio_msg);
+        
+        // Publish decompression time
+        auto time_msg = std_msgs::msg::Float64();
+        time_msg.data = decompress_time_ms;
+        decompression_time_pub_->publish(time_msg);
+        
+        // Publish decompressed size (bytes)
+        auto size_msg = std_msgs::msg::Float64();
+        size_msg.data = static_cast<double>(decompressed_size);
+        decompressed_size_pub_->publish(size_msg);
+        
+        // Calculate network throughput (KB/s)
+        auto current_time = this->now();
+        double time_diff = (current_time - last_stat_time_).seconds();
+        if (time_diff > 0) {
+            double throughput_kbps = (compressed_size / 1024.0) / time_diff;
+            
+            auto throughput_msg = std_msgs::msg::Float64();
+            throughput_msg.data = throughput_kbps;
+            network_throughput_pub_->publish(throughput_msg);
+            
+            last_stat_time_ = current_time;
         }
     }
     
@@ -440,6 +496,10 @@ private:
     
     // ROS2
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr decompressed_publisher_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr compression_ratio_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr decompression_time_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr network_throughput_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr decompressed_size_pub_;
     
     // TCP Client
     int client_socket_ = -1;
@@ -449,6 +509,7 @@ private:
     // Statistics
     std::atomic<size_t> message_count_{0};
     std::atomic<size_t> total_bytes_received_{0};
+    rclcpp::Time last_stat_time_;
 };
 
 int main(int argc, char* argv[])

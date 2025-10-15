@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draco 압축 모니터링 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .metric {
+            display: inline-block;
+            margin: 10px;
+            padding: 15px;
+            background: #007bff;
+            color: white;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .metric-label {
+            font-size: 14px;
+        }
+        #data {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Draco Pointcloud 압축 모니터링</h1>
+        
+        <div class="status success">
+            ✅ 웹 서버가 정상적으로 실행 중입니다!
+        </div>
+        
+        <div class="status info">
+            📊 실시간 메트릭 데이터를 확인하세요
+        </div>
+        
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-value" id="compression-ratio">0%</div>
+                <div class="metric-label">압축률</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="cpu-usage">0%</div>
+                <div class="metric-label">CPU 사용률</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="memory-usage">0%</div>
+                <div class="metric-label">메모리 사용률</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value" id="bandwidth">0 KB/s</div>
+                <div class="metric-label">네트워크 대역폭</div>
+            </div>
+        </div>
+        
+        <h3>📈 실시간 데이터</h3>
+        <div id="data">데이터를 로딩 중...</div>
+        
+        <h3>🔗 링크</h3>
+        <p>
+            <a href="/" target="_blank">📊 전체 대시보드 보기</a> |
+            <a href="/api/metrics" target="_blank">🔧 API 데이터 보기</a>
+        </p>
+    </div>
+
+    <script>
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/metrics');
+                const data = await response.json();
+                
+                // 메트릭 업데이트
+                if (data.compression_ratio && data.compression_ratio.length > 0) {
+                    const ratio = data.compression_ratio[data.compression_ratio.length - 1];
+                    document.getElementById('compression-ratio').textContent = ratio.toFixed(1) + '%';
+                }
+                
+                if (data.cpu_usage && data.cpu_usage.length > 0) {
+                    const cpu = data.cpu_usage[data.cpu_usage.length - 1];
+                    document.getElementById('cpu-usage').textContent = cpu.toFixed(1) + '%';
+                }
+                
+                if (data.memory_usage && data.memory_usage.length > 0) {
+                    const memory = data.memory_usage[data.memory_usage.length - 1];
+                    document.getElementById('memory-usage').textContent = memory.toFixed(1) + '%';
+                }
+                
+                if (data.network_throughput && data.network_throughput.length > 0) {
+                    const bandwidth = data.network_throughput[data.network_throughput.length - 1];
+                    document.getElementById('bandwidth').textContent = bandwidth.toFixed(1) + ' KB/s';
+                }
+                
+                // 데이터 표시
+                document.getElementById('data').textContent = JSON.stringify(data, null, 2);
+                
+            } catch (error) {
+                document.getElementById('data').textContent = '데이터 로딩 실패: ' + error.message;
+            }
+        }
+        
+        // 2초마다 데이터 업데이트
+        fetchData();
+        setInterval(fetchData, 2000);
+    </script>
+</body>
+</html>

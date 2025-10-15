@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draco LiDAR 네트워크 압축 모니터링</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .card {
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            border: 1px solid rgba(0, 0, 0, 0.125);
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online {
+            background-color: #28a745;
+        }
+        .status-offline {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="fas fa-chart-line"></i> Draco LiDAR 네트워크 압축 모니터링
+            </span>
+            <span class="navbar-text">
+                <span class="status-indicator status-online"></span>
+                <i class="fas fa-wifi"></i> TCP/IP 네트워크 기반 실시간 압축 전송
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- 시스템 상태 카드 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">CPU 사용률</h6>
+                                <div class="metric-value" id="cpu-usage">0%</div>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-microchip fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">메모리 사용률</h6>
+                                <div class="metric-value" id="memory-usage">0%</div>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-memory fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">압축률</h6>
+                                <div class="metric-value" id="compression-ratio">0%</div>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-compress-arrows-alt fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">네트워크 처리량</h6>
+                                <div class="metric-value" id="bandwidth-usage">0 KB/s</div>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-network-wired fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 차트 섹션 -->
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-chart-line"></i> 압축률</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="compressionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-clock"></i> 복호화 시간</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="timeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-server"></i> 시스템 리소스</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="systemChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-compress-arrows-alt"></i> 압축 전후 데이터 크기</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="sizeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 네트워크 통신 상태 -->
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-satellite-dish"></i> 송신 PC 상태</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <strong>입력:</strong><br>
+                                <code>TCP/IP (Port 8888)</code>
+                            </div>
+                            <div class="col-6">
+                                <strong>출력 토픽:</strong><br>
+                                <code>/lidar/compressed</code>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="badge bg-success">Draco Bridge 활성</span>
+                            <span class="badge bg-info">실시간 압축/전송</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-satellite"></i> 수신 PC 상태</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <strong>입력:</strong><br>
+                                <code>TCP/IP (Port 8888)</code>
+                            </div>
+                            <div class="col-6">
+                                <strong>출력 토픽:</strong><br>
+                                <code>/lidar/decompressed</code>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="badge bg-success">Draco Client 활성</span>
+                            <span class="badge bg-warning">KISS-ICP SLAM 입력</span>
+                            <span class="badge bg-primary">실시간 통계 발행</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 네트워크 인터페이스 정보 -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-network-wired"></i> 네트워크 인터페이스 정보</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="network-info" class="row">
+                            <!-- 네트워크 정보가 여기에 동적으로 추가됩니다 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 간단한 모니터링 클래스
+        class Monitor {
+            constructor() {
+                this.charts = {};
+                this.updateInterval = 2000; // 2초마다 업데이트
+                this.maxDataPoints = 50;
+                
+                this.initCharts();
+                this.startMonitoring();
+                this.loadNetworkInfo();
+            }
+
+            initCharts() {
+                // 압축률 차트
+                const compressionCtx = document.getElementById('compressionChart').getContext('2d');
+                this.charts.compression = new Chart(compressionCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '압축률 (%)',
+                            data: [],
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+
+                // 시간 차트
+                const timeCtx = document.getElementById('timeChart').getContext('2d');
+                this.charts.time = new Chart(timeCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '복호화 시간 (ms)',
+                            data: [],
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+
+                // 시스템 리소스 차트
+                const systemCtx = document.getElementById('systemChart').getContext('2d');
+                this.charts.system = new Chart(systemCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'CPU 사용률 (%)',
+                            data: [],
+                            borderColor: 'rgb(153, 102, 255)',
+                            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                            tension: 0.1
+                        }, {
+                            label: '메모리 사용률 (%)',
+                            data: [],
+                            borderColor: 'rgb(255, 159, 64)',
+                            backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+
+                // 데이터 크기 차트
+                const sizeCtx = document.getElementById('sizeChart').getContext('2d');
+                this.charts.size = new Chart(sizeCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '압축 해제 후 크기 (bytes)',
+                            data: [],
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            tension: 0.1
+                        }, {
+                            label: '압축 크기 (bytes)',
+                            data: [],
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toLocaleString() + ' bytes';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            async fetchMetrics() {
+                try {
+                    const response = await fetch('/api/metrics');
+                    const data = await response.json();
+                    this.updateCharts(data);
+                    this.updateStatusCards(data);
+                } catch (error) {
+                    console.error('메트릭 데이터 가져오기 실패:', error);
+                }
+            }
+
+            updateCharts(data) {
+                const now = new Date().toLocaleTimeString();
+                
+                // 압축률 차트 업데이트
+                if (data.compression_ratio && data.compression_ratio.length > 0) {
+                    this.updateChart(this.charts.compression, data.compression_ratio, now, 0);
+                }
+
+                // 시간 차트 업데이트
+                if (data.decompression_time && data.decompression_time.length > 0) {
+                    this.updateChart(this.charts.time, data.decompression_time, now, 0);
+                }
+
+                // 시스템 리소스 차트 업데이트
+                if (data.cpu_usage && data.cpu_usage.length > 0) {
+                    this.updateChart(this.charts.system, data.cpu_usage, now, 0);
+                }
+                if (data.memory_usage && data.memory_usage.length > 0) {
+                    this.updateChart(this.charts.system, data.memory_usage, now, 1);
+                }
+
+                // 데이터 크기 차트 업데이트
+                if (data.decompressed_size && data.decompressed_size.length > 0) {
+                    this.updateChart(this.charts.size, data.decompressed_size, now, 0);
+                }
+                if (data.compressed_size && data.compressed_size.length > 0) {
+                    this.updateChart(this.charts.size, data.compressed_size, now, 1);
+                }
+            }
+
+            updateChart(chart, data, label, datasetIndex) {
+                if (data.length > 0) {
+                    const latestValue = data[data.length - 1];
+                    
+                    chart.data.labels.push(label);
+                    chart.data.datasets[datasetIndex].data.push(latestValue);
+                    
+                    if (chart.data.labels.length > this.maxDataPoints) {
+                        chart.data.labels.shift();
+                        chart.data.datasets[datasetIndex].data.shift();
+                    }
+                    
+                    chart.update('none');
+                }
+            }
+
+            updateStatusCards(data) {
+                // CPU 사용률
+                if (data.cpu_usage && data.cpu_usage.length > 0) {
+                    const cpuUsage = data.cpu_usage[data.cpu_usage.length - 1];
+                    document.getElementById('cpu-usage').textContent = `${cpuUsage.toFixed(1)}%`;
+                }
+
+                // 메모리 사용률
+                if (data.memory_usage && data.memory_usage.length > 0) {
+                    const memoryUsage = data.memory_usage[data.memory_usage.length - 1];
+                    document.getElementById('memory-usage').textContent = `${memoryUsage.toFixed(1)}%`;
+                }
+
+                // 압축률
+                if (data.compression_ratio && data.compression_ratio.length > 0) {
+                    const compressionRatio = data.compression_ratio[data.compression_ratio.length - 1];
+                    document.getElementById('compression-ratio').textContent = `${compressionRatio.toFixed(1)}%`;
+                }
+
+                // 네트워크 대역폭
+                if (data.network_throughput && data.network_throughput.length > 0) {
+                    const bandwidth = data.network_throughput[data.network_throughput.length - 1];
+                    document.getElementById('bandwidth-usage').textContent = `${bandwidth.toFixed(1)} KB/s`;
+                }
+            }
+
+            async loadNetworkInfo() {
+                try {
+                    const response = await fetch('/api/system_info');
+                    const data = await response.json();
+                    this.displayNetworkInfo(data.network_interfaces);
+                } catch (error) {
+                    console.error('시스템 정보 가져오기 실패:', error);
+                }
+            }
+
+            displayNetworkInfo(interfaces) {
+                const container = document.getElementById('network-info');
+                container.innerHTML = '';
+
+                Object.entries(interfaces).forEach(([interfaceName, ip]) => {
+                    const interfaceCard = document.createElement('div');
+                    interfaceCard.className = 'col-md-4 mb-3';
+                    interfaceCard.innerHTML = `
+                        <div class="card">
+                            <div class="card-body">
+                                <h6><i class="fas fa-ethernet"></i> ${interfaceName}</h6>
+                                <div class="text-muted">${ip}</div>
+                                <small class="text-success">
+                                    <i class="fas fa-circle"></i> 온라인
+                                </small>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(interfaceCard);
+                });
+            }
+
+            startMonitoring() {
+                this.fetchMetrics();
+                setInterval(() => {
+                    this.fetchMetrics();
+                }, this.updateInterval);
+            }
+        }
+
+        // 페이지 로드 시 모니터링 시작
+        document.addEventListener('DOMContentLoaded', function() {
+            new Monitor();
+        });
+    </script>
+</body>
+</html>
