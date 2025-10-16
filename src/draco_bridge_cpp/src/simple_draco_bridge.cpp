@@ -237,41 +237,102 @@ private:
             // Get point count
             int num_points = msg->width * msg->height;
             if (num_points == 0) {
+                RCLCPP_WARN(this->get_logger(), "Point cloud is empty (num_points=0)");
                 return nullptr;
+            }
+            
+            // Check data size
+            if (msg->data.empty()) {
+                RCLCPP_WARN(this->get_logger(), "Point cloud data is empty");
+                return nullptr;
+            }
+            
+            RCLCPP_DEBUG(this->get_logger(), "Converting point cloud: %d points, data size: %zu bytes, point_step: %u", 
+                        num_points, msg->data.size(), msg->point_step);
+            
+            // Log field information for debugging
+            RCLCPP_DEBUG(this->get_logger(), "Point cloud fields:");
+            for (const auto& field : msg->fields) {
+                RCLCPP_DEBUG(this->get_logger(), "  - %s: offset=%u, datatype=%u, count=%u", 
+                           field.name.c_str(), field.offset, field.datatype, field.count);
             }
             
             // Set number of points first
             point_cloud->set_num_points(num_points);
             
-            // Create position attribute
-            draco::GeometryAttribute pos_att;
-            pos_att.Init(draco::GeometryAttribute::POSITION, nullptr, 3, draco::DT_FLOAT32, false, 12, 0);
-            int pos_att_id = point_cloud->AddAttribute(pos_att, true, num_points);
-            
-            // Create intensity attribute
-            draco::GeometryAttribute intensity_att;
-            intensity_att.Init(draco::GeometryAttribute::GENERIC, nullptr, 1, draco::DT_FLOAT32, false, 4, 0);
-            int intensity_att_id = point_cloud->AddAttribute(intensity_att, true, num_points);
-            
-            // Get attribute pointers
-            auto pos_att_ptr = point_cloud->attribute(pos_att_id);
-            auto intensity_att_ptr = point_cloud->attribute(intensity_att_id);
+            // Prepare position and intensity data
+            std::vector<float> positions(num_points * 3);
+            std::vector<float> intensities(num_points);
             
             const uint8_t* data_ptr = msg->data.data();
             int point_step = msg->point_step;
             
+            // Extract data from ROS message
+            int valid_point_count = 0;
             for (int i = 0; i < num_points; ++i) {
-                // Position (x, y, z)
+                // Check if we have enough data
+                if (static_cast<size_t>((i + 1) * point_step) > msg->data.size()) {
+                    RCLCPP_WARN(this->get_logger(), "Insufficient data at point %d", i);
+                    break;
+                }
+                
+                // Position (x, y, z) - assuming they are at offset 0, 4, 8
                 float x = *reinterpret_cast<const float*>(data_ptr + i * point_step + 0);
                 float y = *reinterpret_cast<const float*>(data_ptr + i * point_step + 4);
                 float z = *reinterpret_cast<const float*>(data_ptr + i * point_step + 8);
                 
-                pos_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), 
-                                             draco::Vector3f(x, y, z).data());
+                // Check for invalid values
+                if (std::isnan(x) || std::isnan(y) || std::isnan(z) ||
+                    std::isinf(x) || std::isinf(y) || std::isinf(z)) {
+                    // Skip invalid points
+                    x = y = z = 0.0f;
+                } else if (x != 0.0f || y != 0.0f || z != 0.0f) {
+                    // Count valid non-zero points
+                    valid_point_count++;
+                }
                 
-                // Intensity
-                float intensity = *reinterpret_cast<const float*>(data_ptr + i * point_step + 12);
-                intensity_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), &intensity);
+                positions[i * 3 + 0] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                
+                // Intensity - assuming it's at offset 12
+                float intensity = 0.0f;
+                if (point_step >= 16) {
+                    intensity = *reinterpret_cast<const float*>(data_ptr + i * point_step + 12);
+                    if (std::isnan(intensity) || std::isinf(intensity)) {
+                        intensity = 0.0f;
+                    }
+                }
+                intensities[i] = intensity;
+            }
+            
+            // Only warn if most points are invalid (less than 1% valid)
+            if (valid_point_count < num_points / 100) {
+                RCLCPP_WARN(this->get_logger(), "Point cloud has very few valid points: %d/%d (%.1f%%)", 
+                           valid_point_count, num_points, 
+                           100.0f * valid_point_count / num_points);
+            }
+            
+            // Create position attribute with pre-allocated data
+            draco::GeometryAttribute pos_att;
+            pos_att.Init(draco::GeometryAttribute::POSITION, nullptr, 3, draco::DT_FLOAT32, false, 
+                        sizeof(float) * 3, 0);
+            int pos_att_id = point_cloud->AddAttribute(pos_att, true, num_points);
+            
+            // Create intensity attribute with pre-allocated data
+            draco::GeometryAttribute intensity_att;
+            intensity_att.Init(draco::GeometryAttribute::GENERIC, nullptr, 1, draco::DT_FLOAT32, false, 
+                             sizeof(float), 0);
+            int intensity_att_id = point_cloud->AddAttribute(intensity_att, true, num_points);
+            
+            // Get attribute pointers and set values
+            auto pos_att_ptr = point_cloud->attribute(pos_att_id);
+            auto intensity_att_ptr = point_cloud->attribute(intensity_att_id);
+            
+            // Set attribute values
+            for (int i = 0; i < num_points; ++i) {
+                pos_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), &positions[i * 3]);
+                intensity_att_ptr->SetAttributeValue(draco::AttributeValueIndex(i), &intensities[i]);
             }
             
             return point_cloud;
@@ -285,6 +346,19 @@ private:
     std::vector<uint8_t> compressPointCloud(draco::PointCloud* point_cloud)
     {
         try {
+            if (!point_cloud) {
+                RCLCPP_ERROR(this->get_logger(), "Point cloud is null");
+                return {};
+            }
+            
+            if (point_cloud->num_points() == 0) {
+                RCLCPP_ERROR(this->get_logger(), "Point cloud has 0 points");
+                return {};
+            }
+            
+            RCLCPP_DEBUG(this->get_logger(), "Compressing point cloud with %d points, %d attributes", 
+                        point_cloud->num_points(), point_cloud->num_attributes());
+            
             draco::Encoder encoder;
             
             // Set compression options
@@ -294,8 +368,10 @@ private:
             
             // Encode
             draco::EncoderBuffer buffer;
-            if (!encoder.EncodePointCloudToBuffer(*point_cloud, &buffer).ok()) {
-                RCLCPP_ERROR(this->get_logger(), "Failed to encode point cloud");
+            draco::Status status = encoder.EncodePointCloudToBuffer(*point_cloud, &buffer);
+            if (!status.ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Failed to encode point cloud: %s (error code: %d)", 
+                           status.error_msg_string().c_str(), status.code());
                 return {};
             }
             
