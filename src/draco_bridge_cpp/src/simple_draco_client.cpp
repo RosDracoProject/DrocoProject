@@ -25,7 +25,7 @@ public:
     SimpleDracoClient() : Node("simple_draco_client")
     {
         // Parameters
-        this->declare_parameter("server_host", "192.168.3.22");
+        this->declare_parameter("server_host", "127.0.0.1");  // localhost for local testing
         this->declare_parameter("server_port", 8888);
         this->declare_parameter("output_topic", "/lidar/decompressed");
         

@@ -85,8 +85,11 @@ export ROS_DOMAIN_ID=15
 ros2 launch kiss_icp odometry.launch.py \
   topic:=/lidar/decompressed \
   visualize:=true \
-  use_sim_time:=true
+  use_sim_time:=true \
+  config_file:=/home/youngmo/DrocoProject/config/kiss_icp_fast.yaml
 ```
+
+
 
 **중요**: frame_id가 자동으로 전송되므로 별도 설정 불필요!
 
@@ -269,9 +272,9 @@ export ROS_DOMAIN_ID=15
 
 # Bag 파일 재생 (터미널 1)
 # 일반 재생:
-ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock
+ros2 bag play /home/youngmo/ros2bagfile/rosbag2_2024_09_24-14_28_57/ --clock
 # 무한 반복 재생:
-ros2 bag play /home/hkit/my_data/lidar_data/rosbag2_2024_09_24-14_28_57 --clock --loop
+ros2 bag play /home/youngmo/ros2bagfile/rosbag2_2024_09_24-14_28_57/ --clock --loop
 
 # 서버 실행 (터미널 2)
 ros2 run draco_bridge_cpp simple_draco_bridge
