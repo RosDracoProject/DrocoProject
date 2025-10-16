@@ -4,3 +4,6 @@
 [submodule "src/velodyne_simulator"]
 	path = src/velodyne_simulator
 	url = https://bitbucket.org/DataspeedInc/velodyne_simulator.git
+[submodule "src/kiss-icp"]
+	path = src/kiss-icp
+	url = https://github.com/PRBonn/kiss-icp.git
