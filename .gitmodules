@@ -7,3 +7,6 @@
 [submodule "src/kiss-icp"]
 	path = src/kiss-icp
 	url = https://github.com/PRBonn/kiss-icp.git
+[submodule "src/ros2_ouster_drivers"]
+	path = src/ros2_ouster_drivers
+	url = git@github.com:ros-drivers/ros2_ouster_drivers.git

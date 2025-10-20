@@ -38,9 +38,9 @@ public:
         quantization_bits_ = this->get_parameter("quantization_bits").as_int();
         compression_speed_ = this->get_parameter("compression_speed").as_int();
         
-        // QoS profile for high frequency
+        // QoS profile for sensor data (LiDAR typically uses BEST_EFFORT)
         auto qos = rclcpp::QoS(10)
-            .reliability(rclcpp::ReliabilityPolicy::Reliable)
+            .reliability(rclcpp::ReliabilityPolicy::BestEffort)
             .durability(rclcpp::DurabilityPolicy::Volatile);
         
         // Publishers and subscribers
